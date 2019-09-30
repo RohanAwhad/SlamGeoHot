@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 from skimage.measure import ransac
-from skimage.transform import FundamentalMatrixTransform
+from skimage.transform import FundamentalMatrixTransform, EssentialMatrixTransform
 
 def add_ones(x):
 	#print(x.shape)
@@ -9,6 +9,28 @@ def add_ones(x):
 	#print(ret)
 	return ret
 
+def extractRt(E):
+	W = np.mat([[0, -1, 0], [1, 0, 0], [0, 0, 1]], dtype=float)
+	U, d, Vt = np.linalg.svd(E)
+	if np.linalg.det(U) < 0:
+		U *= -1.0
+	if np.linalg.det(Vt) < 0:
+		Vt *= -1.0
+	
+	R = np.dot(np.dot(U, W), Vt)
+	if np.sum(R.diagonal()) < 0:
+		R = np.dot(np.dot(U, W.T), Vt)
+
+	t = U[:, 2]
+	#print(U)
+	#print(t)
+
+	pose = np.concatenate([R, t.reshape(3,1)], axis=1)
+
+	return pose
+
+
+f_est_avg = []
 
 class Extractor(object):
 	def __init__(self, K):
@@ -18,12 +40,13 @@ class Extractor(object):
 		self.K = K
 		self.Kinv = np.linalg.inv(self.K)
 
+
 	def normalize(self, pts):
 		return np.dot(self.Kinv, add_ones(pts).T).T[:, 0:2]
 
 	def denormalize(self, pt):
 		ret = np.dot(self.K, np.array([pt[0], pt[1], 1.0]))
-		print(ret)
+		#print(ret)
 		return int(round(ret[0])), int(round(ret[1]))
 
 	def extract(self, img):
@@ -37,6 +60,7 @@ class Extractor(object):
 
 		#matching
 		ret = []
+		Rt = None
 		if self.last is not None:
 			matches = self.bf.knnMatch(des, self.last['des'], k=2)
 			for m, n in matches:
@@ -60,12 +84,28 @@ class Extractor(object):
 			#print(ret)
 
 			model, inliers = ransac((ret[:, 0], ret[:, 1]),
-									FundamentalMatrixTransform,
+									#FundamentalMatrixTransform,
+									EssentialMatrixTransform,
 									min_samples=8,
-									residual_threshold=1,
-									max_trials=100)
-			ret = ret[inliers]
+									#residual_threshold=1,
+									residual_threshold=.005,
+									max_trials=200)
+
+			#print(sum(inliers), len(inliers))
+			#ret = ret[inliers]
 			#print(ret.shape)
+
+			Rt = extractRt(model.params)
+			
+			#print(R)
+			#print(np.sum(R2.diagonal()))
+			'''
+			f_est  = np.sqrt(2)/((v[0] + v[1]) / 2)
+			
+			f_est_avg.append(f_est)
+			print(f_est, np.mean(f_est_avg)) 
+			'''	
+
 		#return
 		self.last = {'kps' : kps, 'des' : des}
-		return ret
+		return ret, Rt
