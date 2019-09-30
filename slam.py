@@ -11,18 +11,38 @@ W = 3840 // 4
 H = 2160 // 4
 F = 270			# focal length
 
-
-disp = Display(W, H)
 K = np.array([[F, 0, W//2],[0,F,H//2], [0,0,1]])
+
+
+#global map
+class Map(object):
+	def __init__(self):
+		self.frames = []
+		self.points = []
+
+
+	def display(self):
+		for f in self.frames:
+			print(f.id)
+			print(f.pose)
+			print()
+		#for p in points:
+		#	print(p.location)
+
+# main classes
+disp = Display(W, H)
+mapp = Map()
 
 class Point(object):
 	# A point is a 3-D point in world
 	# Each point is observed in multiple frames
 
-	def __init__(self, loc):
+	def __init__(self, mapp, loc):
 		self.location = loc
 		self.frames = []
 		self.idxs = []
+		self.id = len(mapp.points)
+		mapp.points.append(self)
 
 	def add_observation(self, frame, idx):
 		self.frames.append(frame)
@@ -33,17 +53,20 @@ class Point(object):
 def triangulate(pose1, pose2, pts1, pts2):
 	return cv2.triangulatePoints(pose1[:3], pose2[:3], pts1.T, pts2.T).T
 
-frames = []
 def process_frame(img):
 	img = cv2.resize(img, (W,H))
-	frame = Frame(img, K)
-	frames.append(frame)
-
-	if len(frames) <= 1: return
-	idx1, idx2, Rt = match_frames(frames[-1], frames[-2])
-	frames[-1].pose = np.dot(Rt, frames[-2].pose)
+	frame = Frame(img, mapp, K)
 	
-	pts4d = triangulate(frames[-1].pose, frames[-2].pose, frames[-1].pts[idx1], frames[-2].pts[idx2])
+	if frame.id == 0:
+		return
+
+	f1 = mapp.frames[-1]
+	f2 = mapp.frames[-2]
+
+	idx1, idx2, Rt = match_frames(f1, f2)
+	f1.pose = np.dot(Rt, f2.pose)
+	
+	pts4d = triangulate(f1.pose, f2.pose, f1.pts[idx1], f2.pts[idx2])
 	
 	#homogeneous 3-Dcoords
 	pts4d /= pts4d[:, 3:]
@@ -57,15 +80,15 @@ def process_frame(img):
 	for i, p in enumerate(pts4d):
 		if not good_pts4d[i]: 
 			continue
-		pt = Point(p)
-		pt.add_observation(frames[-1], idx1[i])
-		pt.add_observation(frames[-2], idx2[i])
+		pt = Point(mapp, p)
+		pt.add_observation(f1, idx1[i])
+		pt.add_observation(f2, idx2[i])
 
 
-	print(frames[-1].pose)
+	print(f1.pose)
 	print(pts4d)
 
-	for pt1, pt2 in zip(frames[-1].pts[idx1], frames[-2].pts[idx2]):
+	for pt1, pt2 in zip(f1.pts[idx1], f2.pts[idx2]):
 		#u1, v1 = map(lambda x: int(round(x)), pt1)
 		#u2, v2 = map(lambda x: int(round(x)), pt2)
 
@@ -77,6 +100,8 @@ def process_frame(img):
 
 	#print(img.shape)
 	disp.paint(img)
+
+	mapp.display()
 
 
 if __name__=='__main__':

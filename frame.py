@@ -101,12 +101,16 @@ def match_frames(f1, f2):
 
 
 class Frame(object):
-	def __init__(self, img, K):
-		self.pts, self.des = extract(img)
+	def __init__(self, img, mapp, K):
 		self.K = K
 		self.Kinv = np.linalg.inv(self.K)
 		self.pose = IRt
+
+		self.pts, self.des = extract(img)
 		self.pts = normalize(self.Kinv, self.pts)
+
+		self.id = len(mapp.frames)
+		mapp.frames.append(self)
 
 		
 
