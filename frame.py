@@ -28,7 +28,7 @@ def extractRt(E):
 	ret = np.eye(4)
 	ret[:3, :3] = R
 	ret[:3, 3] = t
-	print(ret)
+	#print(ret)
 	return ret
 
 		

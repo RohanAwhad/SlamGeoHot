@@ -1,12 +1,14 @@
+#!/usr/bin/env python3
+
+import os
 import cv2
 from display import Display
 import time
 import numpy as np
 from frame import Frame, denormalize, match_frames, IRt
 import g2o
-from multiprocessing import Process, Queue
-import OpenGL.GL as gl
-import pangolin
+from pointmap import Map, Point
+
 
 
 # camera intrinsics
@@ -15,91 +17,12 @@ H = 2160 // 4
 F = 270			# focal length
 
 K = np.array([[F, 0, W//2],[0,F,H//2], [0,0,1]])
+Kinv = np.linalg.inv(K)
 
-
-#global map
-class Map(object):
-	def __init__(self):
-		self.frames = []
-		self.points = []
-		#self.viewer_init()
-		self.state=None
-
-		self.q = Queue()
-		viewer = Process(target=self.viewer_thread, args=(self.q, ))
-		viewer.daemon = True
-		viewer.start()
-
-
-	def viewer_thread(self, q):
-		self.viewer_init()
-		while 1: 
-			self.viewer_refresh(q)
-
-
-	def viewer_init(self,):
-
-		pangolin.CreateWindowAndBind('Main', 640, 480)
-		gl.glEnable(gl.GL_DEPTH_TEST)
-
-		# Define Projection and initial ModelView matrix
-		self.scam = pangolin.OpenGlRenderState(
-			pangolin.ProjectionMatrix(640, 480, 420, 420, 320, 240, 0.2, 100),
-			pangolin.ModelViewLookAt(-2, 2, -2, 0, 0, 0, pangolin.AxisDirection.AxisY))
-		self.handler = pangolin.Handler3D(self.scam)
-
-		# Create Interactive Window 
-		self.dcam = pangolin.CreateDisplay()
-		self.dcam.SetBounds(0.0, 1.0, 0.0, 1.0, -640.0/480.0)
-		self.dcam.SetHandler(self.handler)
-
-		self.state = None
-
-	def viewer_refresh(self, q):
-		if self.state is None or not q.empty():
-			self.state = q.get()
-		gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
-		gl.glClearColor(1.0, 1.0, 1.0, 1.0)
-		self.dcam.Activate(self.scam)
-
-		gl.glPointSize(10)
-		gl.glColor3f(0.0, 1.0, 0.0)
-		pangolin.DrawPoints(np.array([d[:3, 3] for d in self.state[0]]))
-		
-		gl.glPointSize(2)
-		gl.glColor3f(1.0, 0.0, 0.0)
-		pangolin.DrawPoints(np.array(self.state[1]))
-
-		pangolin.FinishFrame()
-
-
-	def display(self):
-		poses, pts = [], []
-		for f in self.frames:
-			poses.append(f.pose)
-		for p in self.points:
-			pts.append(p.pt)
-		self.q.put((poses, pts))
 
 # main classes
-disp = Display(W, H)
 mapp = Map()
-
-class Point(object):
-	# A point is a 3-D point in world
-	# Each point is observed in multiple frames
-
-	def __init__(self, mapp, loc):
-		self.pt = loc
-		self.frames = []
-		self.idxs = []
-		self.id = len(mapp.points)
-		mapp.points.append(self)
-
-
-	def add_observation(self, frame, idx):
-		self.frames.append(frame)
-		self.idxs.append(idx)
+disp = Display(W, H) if os.getenv("D2D") is not None else None
 
 
 
@@ -138,8 +61,8 @@ def process_frame(img):
 		pt.add_observation(f2, idx2[i])
 
 
-	print(f1.pose)
-	print(pts4d)
+	#print(f1.pose)
+	#print(pts4d)
 
 	for pt1, pt2 in zip(f1.pts[idx1], f2.pts[idx2]):
 		#u1, v1 = map(lambda x: int(round(x)), pt1)
@@ -152,8 +75,11 @@ def process_frame(img):
 		cv2.line(img, (u1, v1), (u2, v2), color=(255, 0, 0))
 
 	#print(img.shape)
-	disp.paint(img)
+	
+	# 2-D display
+	if disp is not None: disp.paint(img)
 
+	#3-D display
 	mapp.display()
 
 
